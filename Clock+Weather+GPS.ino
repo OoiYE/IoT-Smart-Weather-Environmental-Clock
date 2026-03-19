@@ -37,9 +37,9 @@ const unsigned char icon_rain [] PROGMEM = {
 };
 
 // ===== WiFi & API info =====
-const char* ssid     = "ax6000";
-const char* password = "weihanqi";
-String apiKey = "54c7fd807ac4c2f5193467e9ca9520cd";
+const char* ssid     = "YourWiFi";
+const char* password = "YourPassword";
+String apiKey = "YourAPIKey";
 String city = "Waiting...";
 
 // ===== Globals =====
