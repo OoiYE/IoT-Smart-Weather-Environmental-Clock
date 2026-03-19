@@ -7,19 +7,18 @@
 #include <WiFiUdp.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
-#include <TinyGPSPlus.h>
+#include <TinyGPSPlus.h> 
 
 // ===== GPS Setup =====
 #define GPS_RX_PIN 20 
 #define GPS_TX_PIN 21 
-HardwareSerial gpsSerial(1); // Use UART1 for GPS
+HardwareSerial gpsSerial(1); 
 TinyGPSPlus gps;
 
-// Blank coordinates (No default location)
 double currentLat = 0.0; 
 double currentLon = 0.0;
 bool hasGpsFix = false;
-bool firstWeatherFetched = false; // Tracks if we've done our first API call
+bool firstWeatherFetched = false;
 
 // Custom 16x16 Weather Bitmaps
 const unsigned char icon_sun [] PROGMEM = {
@@ -38,42 +37,36 @@ const unsigned char icon_rain [] PROGMEM = {
 };
 
 // ===== WiFi & API info =====
-const char* ssid     = "YourWiFi";
+const char* ssid     = "YourWifi";
 const char* password = "YourPassword";
 String apiKey = "YourAPIKey";
-String city = "Waiting...";
+String city = "Searching GPS..."; 
 
 // ===== Globals =====
-String weatherDesc = "Loading...";
+String weatherDesc = "--";
 float outdoorTemp = 0;
 unsigned long lastWeatherUpdate = 0;
-const long weatherInterval = 600000; // Update every 10 mins
+const long weatherInterval = 600000; 
 
-// For page cycling
 bool showClockPage = true;
 unsigned long lastPageChange = 0;
-const int pageInterval = 10000; //Switch every 10 seconds
+const int pageInterval = 10000; 
 
-// ===== OLED setup =====
+// CHANGED: Height is now 64
 #define SCREEN_WIDTH 128
-#define SCREEN_HEIGHT 32
+#define SCREEN_HEIGHT 64
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
-
-// ===== SHT31 setup =====
 Adafruit_SHT31 sht31 = Adafruit_SHT31();
 
-// ===== NTP setup =====
 WiFiUDP ntpUDP;
-NTPClient timeClient(ntpUDP, "pool.ntp.org", 8 * 3600, 60000); // GMT+8
+NTPClient timeClient(ntpUDP, "pool.ntp.org", 8 * 3600, 60000); 
 
-// ===== Pins  =====
 #define I2C_SDA 8
 #define I2C_SCL 9
 
 void getWeatherData() {
-  if (WiFi.status() == WL_CONNECTED) {
+  if (WiFi.status() == WL_CONNECTED && hasGpsFix) {
     HTTPClient http;
-    // API call uses lat and lon instead of city name
     String url = "http://api.openweathermap.org/data/2.5/weather?lat=" + String(currentLat, 4) + "&lon=" + String(currentLon, 4) + "&appid=" + apiKey + "&units=metric";
     
     http.begin(url);
@@ -88,7 +81,6 @@ void getWeatherData() {
       const char* desc = doc["weather"][0]["main"]; 
       weatherDesc = String(desc);
       
-      // Extract the nearest city name from the coordinates to display on OLED
       if (doc.containsKey("name")) {
         city = doc["name"].as<String>();
       }
@@ -98,62 +90,68 @@ void getWeatherData() {
 }
 
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(115200);
   Wire.begin(I2C_SDA, I2C_SCL);
 
-  // Initialize GPS Serial (9600 baud is standard for NEO-6M)
-  gpsSerial.begin(9600, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
-
-  // WiFi
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println("\nWiFi connected!");
-
-  // Weather
-  getWeatherData();
-
-  // OLED init
+  // 1. TURN ON OLED FIRST
   if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
-    Serial.println(F("SSD1306 allocation failed"));
     for (;;);
   }
   display.clearDisplay();
-  display.setRotation(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setTextSize(1);
+  display.setCursor(0, 10);
+  display.println("Booting System...");
+  display.display();
 
-  // SHT31 init
+  // 2. INIT SENSORS & GPS
+  display.println("Starting GPS..."); display.display();
+  gpsSerial.begin(9600, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
+
+  display.println("Starting SHT31..."); display.display();
   if (!sht31.begin(0x44)) {
-    Serial.println("Couldn't find SHT31");
-    while (1) delay(1);
+    display.println("SHT31 Error!"); display.display();
+    delay(2000); // Wait a moment so you can read the error
   }
 
-  // NTP init
-  timeClient.begin();
+  // 3. CONNECT WIFI (With visual feedback)
+  display.println("Connecting WiFi..."); display.display();
+  WiFi.begin(ssid, password);
+  
+  // Timeout added so it doesn't loop infinitely on a power bank
+  int wifiAttempts = 0;
+  while (WiFi.status() != WL_CONNECTED && wifiAttempts < 20) {
+    delay(500);
+    display.print("."); display.display();
+    wifiAttempts++;
+  }
 
+  if (WiFi.status() == WL_CONNECTED) {
+    display.println("\nWiFi Connected!");
+    timeClient.begin();
+  } else {
+    display.println("\nWiFi Timeout.");
+  }
+  display.display();
+  delay(1500); // Give you time to read the boot sequence
 }
 
 void loop() {
   timeClient.update();
 
-  // Continuously feed GPS data into the TinyGPS++ parser
   while (gpsSerial.available() > 0) {
     gps.encode(gpsSerial.read());
   }
 
-  //Check for Satellite Lock
   if (gps.location.isUpdated() && gps.location.isValid()) {
     double newLat = gps.location.lat();
     double newLon = gps.location.lng();
     
-    // SAFETY NET: Ignore the premature "0.0" coordinates (Null Island)
     if (newLat != 0.0 && newLon != 0.0) {
       currentLat = newLat;
       currentLon = newLon;
       hasGpsFix = true;
 
-      // Fetch weather immediately the very first time we get a real lock
       if (!firstWeatherFetched) {
         getWeatherData();
         firstWeatherFetched = true;
@@ -162,23 +160,22 @@ void loop() {
     }
   }
 
-  // Update weather on interval
-  if (millis() - lastWeatherUpdate > weatherInterval) {
+  if (hasGpsFix && (millis() - lastWeatherUpdate > weatherInterval)) {
     getWeatherData();
     lastWeatherUpdate = millis();
   }
 
-  // Toggle Page every 5 seconds
   if (millis() - lastPageChange > pageInterval) {
     showClockPage = !showClockPage;
     lastPageChange = millis();
   }
 
+  // ===== DRAWING THE HORIZONTAL OLED =====
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
 
   if (showClockPage) {
-    // ===== PAGE 1: CLOCK & INDOOR SENSOR =====
+    // PAGE 1: CLOCK 
     int hours = timeClient.getHours();
     bool isPM = (hours >= 12);
     if (hours > 12) hours -= 12;
@@ -189,62 +186,66 @@ void loop() {
     sprintf(mStr, "%02d", timeClient.getMinutes());
     sprintf(sStr, "%02d", timeClient.getSeconds());
 
-    display.setTextSize(1);
-    display.setCursor(2, 0);
-    display.println("/////");
-    display.setCursor(60, 10);
-    display.println(isPM ? "PM" : "AM");
-    display.drawLine(0, 10, 128, 10, SSD1306_WHITE);
-
+    // Big Horizontal Time
     display.setTextSize(2);
-    display.setCursor(5, 30); display.println(hStr);
-    display.setCursor(5, 52); display.println(mStr);
-    display.setCursor(5, 74); display.println(sStr);
+    display.setCursor(12, 12); 
+    display.print(hStr); display.print(":"); 
+    display.print(mStr); display.print(":"); 
+    display.print(sStr);
 
-    display.drawLine(0, 96, 32, 96, SSD1306_WHITE);
+    // AM/PM smaller on the right
     display.setTextSize(1);
-    display.setCursor(5, 103); display.print((int)sht31.readTemperature()); display.print((char)247); display.print("C");
-    display.setCursor(5, 116); display.print((int)sht31.readHumidity()); display.print("%");
+    display.setCursor(110, 12);
+    display.print(isPM ? "PM" : "AM");
+
+    // Divider Line
+    display.drawLine(0, 36, 128, 36, SSD1306_WHITE);
+
+    // Indoor Sensor Data along the bottom
+    display.setCursor(10, 48);
+    display.print("In: "); display.print((int)sht31.readTemperature()); 
+    display.print((char)247); display.print("C");
+    
+    display.setCursor(75, 48);
+    display.print("Hum: "); display.print((int)sht31.readHumidity()); display.print("%");
 
   } else {
-    // ===== PAGE 2: OUTDOOR WEATHER =====
+    // PAGE 2: WEATHER
     display.setTextSize(1);
-    display.setCursor(2, 5);
-    // Show a small asterisk next to the city if it's using live GPS data
-    display.println(city);
-    if (hasGpsFix) display.print("*");
+    display.setCursor(0, 0);
+    display.print(city);
+    
+    if (!hasGpsFix && (millis() / 500) % 2 == 0) {
+      display.print(" *");
+    }
 
-    display.setCursor(2, 27);
-    display.println("OUT:");
+    // Draw Icon on the left
+    if (weatherDesc == "Clear") {
+      display.drawBitmap(10, 25, icon_sun, 16, 16, SSD1306_WHITE);
+    } else if (weatherDesc == "Clouds") {
+      display.drawBitmap(10, 25, icon_cloud, 16, 16, SSD1306_WHITE);
+    } else if (weatherDesc == "Rain" || weatherDesc == "Drizzle") {
+      display.drawBitmap(10, 25, icon_rain, 16, 16, SSD1306_WHITE);
+    } else {
+      display.setCursor(14, 25);
+      display.print("?"); 
+    }
 
-    // Big Outdoor Temp
-    display.setTextSize(2);
-    display.setCursor(2, 45);
+    // Huge Outdoor Temp in the center-right
+    display.setTextSize(3);
+    display.setCursor(45, 20);
     display.print((int)outdoorTemp);
-    display.setTextSize(2);
-    display.print((char)247); // Degree symbol
+
+    display.setTextSize(1);
+    display.print((char)247); 
     display.setTextSize(2);
     display.print("C");
 
-    display.drawLine(0, 80, 32, 80, SSD1306_WHITE);
-
-    // Weather Description
+    // Weather description text below the temp
     display.setTextSize(1);
-    display.setCursor(2, 85);
-    display.println(weatherDesc);
-    
-    if (weatherDesc == "Clear") {
-      display.drawBitmap(8, 100, icon_sun, 16, 16, WHITE);
-    } else if (weatherDesc == "Clouds") {
-      display.drawBitmap(8, 100, icon_cloud, 16, 16, WHITE);
-    } else if (weatherDesc == "Rain" || weatherDesc == "Drizzle") {
-      display.drawBitmap(8, 100, icon_rain, 16, 16, WHITE);
-    } else {
-      display.setCursor(12, 22);
-      display.print("?"); // Fallback for unknown weather
-    }
-    
+    display.setCursor(45, 50);
+    display.print(weatherDesc);
   }
+  
   display.display();
-
 }
