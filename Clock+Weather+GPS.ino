@@ -15,10 +15,11 @@
 HardwareSerial gpsSerial(1); // Use UART1 for GPS
 TinyGPSPlus gps;
 
-// Default to Penang coordinates until GPS gets a lock
-double currentLat = 5.4141; 
-double currentLon = 100.3288;
+// Blank coordinates (No default location)
+double currentLat = 0.0; 
+double currentLon = 0.0;
 bool hasGpsFix = false;
+bool firstWeatherFetched = false; // Tracks if we've done our first API call
 
 // Custom 16x16 Weather Bitmaps
 const unsigned char icon_sun [] PROGMEM = {
@@ -141,11 +142,24 @@ void loop() {
     gps.encode(gpsSerial.read());
   }
 
-  // Update coordinates if we have a valid lock
+  //Check for Satellite Lock
   if (gps.location.isUpdated() && gps.location.isValid()) {
-    currentLat = gps.location.lat();
-    currentLon = gps.location.lng();
-    hasGpsFix = true;
+    double newLat = gps.location.lat();
+    double newLon = gps.location.lng();
+    
+    // SAFETY NET: Ignore the premature "0.0" coordinates (Null Island)
+    if (newLat != 0.0 && newLon != 0.0) {
+      currentLat = newLat;
+      currentLon = newLon;
+      hasGpsFix = true;
+
+      // Fetch weather immediately the very first time we get a real lock
+      if (!firstWeatherFetched) {
+        getWeatherData();
+        firstWeatherFetched = true;
+        lastWeatherUpdate = millis();
+      }
+    }
   }
 
   // Update weather on interval
