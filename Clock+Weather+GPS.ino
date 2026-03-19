@@ -10,8 +10,8 @@
 #include <TinyGPSPlus.h>
 
 // ===== GPS Setup =====
-#define GPS_RX_PIN 20 // Connect to GPS TX
-#define GPS_TX_PIN 21 // Connect to GPS RX
+#define GPS_RX_PIN 20 
+#define GPS_TX_PIN 21 
 HardwareSerial gpsSerial(1); // Use UART1 for GPS
 TinyGPSPlus gps;
 
