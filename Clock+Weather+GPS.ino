@@ -209,7 +209,7 @@ void loop() {
     display.setTextSize(2);
     
     // Shifted slightly to center the date perfectly
-    display.setCursor(5, 38); 
+    display.setCursor(5, 42); 
     display.print(dateStr);
 
   } else if (currentPage == 1) { 
@@ -270,7 +270,7 @@ void loop() {
     display.setTextSize(2);
     display.print("C");
 
-    display.setTextSize(1);
+    display.setTextSize(2);
     display.setCursor(45, 50);
     display.print(weatherDesc);
   }
