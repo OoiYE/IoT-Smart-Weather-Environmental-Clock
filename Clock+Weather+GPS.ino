@@ -10,6 +10,10 @@
 #include <TinyGPSPlus.h> 
 #include <time.h> 
 
+// ===== Touch Sensor Setup =====
+#define TOUCH_PIN 10
+bool lastTouchState = LOW;
+
 // ===== GPS Setup =====
 #define GPS_RX_PIN 20 
 #define GPS_TX_PIN 21 
@@ -38,9 +42,9 @@ const unsigned char icon_rain [] PROGMEM = {
 };
 
 // ===== WiFi & API info =====
-const char* ssid     = "ax6000";
-const char* password = "weihanqi";
-String apiKey = "54c7fd807ac4c2f5193467e9ca9520cd";
+const char* ssid     = "YourWiFi";
+const char* password = "YourPassword";
+String apiKey = "YourAPIKey";
 String city = "Searching GPS..."; 
 
 // ===== Globals =====
@@ -91,6 +95,7 @@ void getWeatherData() {
 }
 
 void setup() {
+  pinMode(TOUCH_PIN, INPUT);
   Serial.begin(9600);
   Wire.begin(I2C_SDA, I2C_SCL);
 
@@ -160,12 +165,34 @@ void loop() {
     lastWeatherUpdate = millis();
   }
 
-  // Cycles 0 -> 1 -> 2 -> 0 every 5 seconds
-  if (millis() - lastPageChange > pageInterval) {
+  // ===== HYBRID PAGE TRANSITION (TIME + TOUCH) =====
+  bool currentTouchState = digitalRead(TOUCH_PIN);
+
+  // Sensor touched?
+  bool isTouched = (currentTouchState == HIGH && lastTouchState == LOW);
+
+  // Has it been 5 seconds since the last page change?
+  bool timeIsUp = (millis() - lastPageChange > pageInterval);
+
+  // If either the sensor is touched or time is up, change the page
+  if(isTouched || timeIsUp){
     currentPage++;
-    if (currentPage > 2) { currentPage = 0; }
-    lastPageChange = millis();
+    if(currentPage > 2){
+      currentPage = 0;
+    }
+
+  // CRITICAL: Reset the timer so it starts counting a fresh 5 seconds 
+  // from the exact moment you touched it (or it auto-changed)
+  lastPageChange = millis();
+
+  // Debouncing time to prevent double touch
+    if(isTouched){
+      delay(50);
+    }
   }
+
+  // Save the current touch state for the next loop cycle
+  lastTouchState = currentTouchState;
 
   // ===== DRAWING THE UI =====
   display.clearDisplay();
